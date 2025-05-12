@@ -1,0 +1,33 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: trabalho3-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: secretRoot123
+      MYSQL_DATABASE: trabalho3
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: s3nh4F0rt3
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./schema_trabalho3.sql:/docker-entrypoint-initdb.d/schema_trabalho3.sql:ro
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    platform: linux/amd64
+    container_name: trabalho3-pma
+    restart: unless-stopped
+    environment:
+      PMA_HOST: db
+      PMA_USER: appuser
+      PMA_PASSWORD: s3nh4F0rt3
+      UPLOAD_LIMIT: 64M
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+
+volumes:
+  db_data:
