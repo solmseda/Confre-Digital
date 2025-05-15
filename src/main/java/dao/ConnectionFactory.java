@@ -5,7 +5,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 
 public class ConnectionFactory {
-    private static final String URL  = "jdbc:mysql://localhost:3306/trabalho3?useSSL=false&serverTimezone=UTC";
+    private static final String URL  = "jdbc:mysql://localhost:3306/trabalho3?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true";
     private static final String USER = "appuser";
     private static final String PASS = "s3nh4F0rt3";
 

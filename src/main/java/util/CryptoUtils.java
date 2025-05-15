@@ -2,9 +2,9 @@ package util;
 
 import org.bouncycastle.crypto.generators.OpenBSDBCrypt;
 
-import javax.crypto.Cipher;
-import javax.crypto.SecretKey;
+import javax.crypto.*;
 import javax.crypto.spec.SecretKeySpec;
+import javax.security.auth.x500.X500Principal;
 import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
@@ -25,20 +25,39 @@ public class CryptoUtils {
     }
 
     public static String extrairEmailDoCertificado(X509Certificate cert) {
-        String subject = cert.getSubjectX500Principal().getName();
-        for (String part : subject.split(",")) {
-            if (part.trim().startsWith("EMAILADDRESS=")) {
-                return part.trim().substring("EMAILADDRESS=".length());
+        if (cert == null) return null;
+
+        X500Principal subject = cert.getSubjectX500Principal();
+        String subjectDN = subject.getName();
+
+        for (String parte : subjectDN.split(",")) {
+            parte = parte.trim();
+            if (parte.startsWith("E=") || parte.startsWith("EMAIL=") ||
+                    parte.startsWith("1.2.840.113549.1.9.1=")) {
+                return parte.substring(parte.indexOf('=') + 1).trim();
             }
         }
+
+        // Fallback para CN se parecer email
+        for (String parte : subjectDN.split(",")) {
+            parte = parte.trim();
+            if (parte.startsWith("CN=")) {
+                String cnValue = parte.substring(3).trim();
+                if (cnValue.contains("@") && cnValue.contains(".")) {
+                    return cnValue;
+                }
+            }
+        }
+
         return null;
     }
 
     public static String extrairNomeDoCertificado(X509Certificate cert) {
         String subject = cert.getSubjectX500Principal().getName();
         for (String part : subject.split(",")) {
-            if (part.trim().startsWith("CN=")) {
-                return part.trim().substring("CN=".length());
+            part = part.trim();
+            if (part.startsWith("CN=")) {
+                return part.substring(part.indexOf('=') + 1).trim();
             }
         }
         return null;
@@ -56,7 +75,7 @@ public class CryptoUtils {
         return salt;
     }
 
-    // === AES 256 ===
+    // === AES 256 (ECB como especificado) ===
 
     public static byte[] cifrarComAES256(byte[] dados, String senha) throws Exception {
         Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
@@ -73,7 +92,7 @@ public class CryptoUtils {
     private static SecretKey gerarChaveAES(String senha) throws Exception {
         SecureRandom sr = SecureRandom.getInstance("SHA1PRNG");
         sr.setSeed(senha.getBytes(StandardCharsets.UTF_8));
-        byte[] key = new byte[32];
+        byte[] key = new byte[32]; // 256 bits
         sr.nextBytes(key);
         return new SecretKeySpec(key, "AES");
     }
@@ -84,7 +103,7 @@ public class CryptoUtils {
         KeyFactory kf = KeyFactory.getInstance("RSA");
         PrivateKey privateKey = kf.generatePrivate(new PKCS8EncodedKeySpec(chavePrivadaBytes));
 
-        // Mensagem teste
+        // Mensagem teste de 8192 bytes como especificado
         byte[] mensagem = new byte[8192];
         new SecureRandom().nextBytes(mensagem);
 
@@ -99,10 +118,6 @@ public class CryptoUtils {
         verifier.initVerify(cert.getPublicKey());
         verifier.update(mensagem);
 
-        if (verifier.verify(assinatura)) {
-            return chavePrivadaBytes;
-        } else {
-            return null;
-        }
+        return verifier.verify(assinatura) ? chavePrivadaBytes : null;
     }
 }

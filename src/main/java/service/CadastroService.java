@@ -4,92 +4,156 @@ import dao.UsuarioDAO;
 import dao.ChaveiroDAO;
 import model.Usuario;
 import model.Chaveiro;
-import util.Base32;
 import util.CryptoUtils;
 import util.TOTPUtil;
+import util.Base32;
 
 import javax.swing.*;
 import java.io.File;
 import java.nio.file.Files;
 import java.security.cert.X509Certificate;
-import java.util.Base64;
+import java.util.Arrays;
 
 public class CadastroService {
 
     public void executarCadastro() {
+        JTextField campoCert = new JTextField(40);
+        JTextField campoChave = new JTextField(40);
+        JPasswordField campoFraseSecreta = new JPasswordField(40);
+        JPasswordField campoSenha = new JPasswordField(10);
+        JPasswordField campoConfirmacao = new JPasswordField(10);
+
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.add(new JLabel("Caminho do certificado digital (.pem):"));
+        panel.add(campoCert);
+        panel.add(new JLabel("Caminho da chave privada (.enc):"));
+        panel.add(campoChave);
+        panel.add(new JLabel("Frase secreta da chave privada:"));
+        panel.add(campoFraseSecreta);
+        panel.add(new JLabel("Senha pessoal (8 a 10 dígitos):"));
+        panel.add(campoSenha);
+        panel.add(new JLabel("Confirme a senha pessoal:"));
+        panel.add(campoConfirmacao);
+
+        int result = JOptionPane.showConfirmDialog(null, panel,
+                "Cadastro do Administrador", JOptionPane.OK_CANCEL_OPTION);
+        if (result != JOptionPane.OK_OPTION) return;
+
         try {
-            UsuarioDAO usuarioDAO = new UsuarioDAO();
-            ChaveiroDAO chaveiroDAO = new ChaveiroDAO();
+            String caminhoCertificado = campoCert.getText().trim().replace("\"", "");
+            String caminhoChavePrivada = campoChave.getText().trim().replace("\"", "");
+            String fraseSecreta = new String(campoFraseSecreta.getPassword());
+            String senha = new String(campoSenha.getPassword());
+            String senhaConfirmacao = new String(campoConfirmacao.getPassword());
 
-            // 1. Caminho do certificado digital
-            String caminhoCertificado = JOptionPane.showInputDialog("Caminho do certificado digital (.pem):");
-            if (caminhoCertificado == null || caminhoCertificado.isBlank()) return;
-
-            // 2. Caminho da chave privada
-            String caminhoChavePrivada = JOptionPane.showInputDialog("Caminho da chave privada (.enc):");
-            if (caminhoChavePrivada == null || caminhoChavePrivada.isBlank()) return;
-
-            // 3. Frase secreta para descriptografar a chave privada
-            String fraseSecreta = JOptionPane.showInputDialog("Frase secreta da chave privada:");
-            if (fraseSecreta == null || fraseSecreta.isBlank()) return;
-
-            // 4. Grupo (Administrador por padrão)
-            int gid = 1;
-
-            // 5. Senha pessoal
-            String senha = JOptionPane.showInputDialog("Senha pessoal (8 a 10 dígitos):");
-            String senhaConfirmacao = JOptionPane.showInputDialog("Confirme a senha pessoal:");
-
-            if (!senha.equals(senhaConfirmacao)) {
-                JOptionPane.showMessageDialog(null, "Senhas não coincidem.");
+            if (!validarDados(senha, senhaConfirmacao, caminhoCertificado, caminhoChavePrivada)) {
                 return;
             }
 
-            // 6. Leitura do certificado e extração do email
             X509Certificate cert = CryptoUtils.lerCertificadoPEM(caminhoCertificado);
             String email = CryptoUtils.extrairEmailDoCertificado(cert);
             String nome = CryptoUtils.extrairNomeDoCertificado(cert);
 
-            // 7. Geração da chave secreta TOTP
-            byte[] segredoTotp = TOTPUtil.gerarChaveSecreta();
-            byte[] segredoTotpCifrado = CryptoUtils.cifrarComAES256(segredoTotp, senha);
+            if (email == null || nome == null) {
+                JOptionPane.showMessageDialog(null, "Certificado inválido ou sem e-mail/nome.");
+                return;
+            }
 
-            // 8. Hash da senha
-            String hashBcrypt = CryptoUtils.gerarHashBcrypt(senha);
-
-            // 9. Criação do usuário
-            Usuario usuario = new Usuario();
-            usuario.setLoginEmail(email);
-            usuario.setNome(nome);
-            usuario.setSenhaBcrypt(hashBcrypt);
-            usuario.setTotpSecretEnc(segredoTotpCifrado);
-            usuario.setGid(gid);
-
-            usuarioDAO.insert(usuario);
-
-            // 10. Decriptar chave privada
             byte[] chavePrivadaCifrada = Files.readAllBytes(new File(caminhoChavePrivada).toPath());
             byte[] chavePrivadaDescriptografada = CryptoUtils.decifrarComAES256(chavePrivadaCifrada, fraseSecreta);
-            byte[] chavePrivadaRevalidada = CryptoUtils.validarChaveComCertificado(cert, chavePrivadaDescriptografada);
-            if (chavePrivadaRevalidada == null) {
+            byte[] chavePrivadaValidada = CryptoUtils.validarChaveComCertificado(cert, chavePrivadaDescriptografada);
+
+            if (chavePrivadaValidada == null) {
                 JOptionPane.showMessageDialog(null, "Validação da chave falhou.");
                 return;
             }
 
-            // 11. Salvar certificado + chave privada no banco (tabela Chaveiro)
+            UsuarioDAO usuarioDAO = new UsuarioDAO();
+            ChaveiroDAO chaveiroDAO = new ChaveiroDAO();
+
+            byte[] segredoTotp = TOTPUtil.gerarChaveSecreta();
+            byte[] segredoTotpCifrado = CryptoUtils.cifrarComAES256(segredoTotp, senha);
+
+            Usuario usuario = new Usuario();
+            usuario.setLoginEmail(email);
+            usuario.setNome(nome);
+            usuario.setSenhaBcrypt(CryptoUtils.gerarHashBcrypt(senha));
+            usuario.setTotpSecretEnc(segredoTotpCifrado);
+            usuario.setGid(1); // Grupo administrador
+
+            usuarioDAO.insert(usuario);
+
             Chaveiro chaveiro = new Chaveiro();
             chaveiro.setUid(usuario.getUid());
             chaveiro.setCertPem(Files.readString(new File(caminhoCertificado).toPath()));
-            chaveiro.setPrivateKeyEnc(chavePrivadaCifrada);
+            chaveiro.setPrivateKeyEnc(CryptoUtils.cifrarComAES256(chavePrivadaValidada, senha));
             chaveiroDAO.insert(chaveiro);
 
-            // 12. Exibir segredo TOTP para registrar no Authenticator
             String segredoBase32 = new Base32(Base32.Alphabet.BASE32, false, false).toString(segredoTotp);
-            JOptionPane.showMessageDialog(null, "Segredo TOTP (registre no Google Authenticator):\n" + segredoBase32);
+            JOptionPane.showMessageDialog(null,
+                    "Segredo TOTP (registre no Google Authenticator):\n" + segredoBase32 +
+                            "\n\nURI para QR Code:\notpauth://totp/Cofre%20Digital:" + email +
+                            "?secret=" + segredoBase32);
 
         } catch (Exception e) {
-            e.printStackTrace();
             JOptionPane.showMessageDialog(null, "Erro no cadastro: " + e.getMessage());
+        } finally {
+            Arrays.fill(campoFraseSecreta.getPassword(), ' ');
+            Arrays.fill(campoSenha.getPassword(), ' ');
+            Arrays.fill(campoConfirmacao.getPassword(), ' ');
         }
+    }
+
+    private boolean validarDados(String senha, String confirmacao, String caminhoCert, String caminhoChave) {
+        // Verifica se as senhas coincidem
+        if (!senha.equals(confirmacao)) {
+            JOptionPane.showMessageDialog(null, "As senhas não coincidem.");
+            return false;
+        }
+
+        // Verifica o comprimento da senha
+        if (senha.length() < 8 || senha.length() > 10) {
+            JOptionPane.showMessageDialog(null,
+                    "A senha deve ter entre 8 e 10 caracteres.");
+            return false;
+        }
+
+        // Verifica se contém apenas dígitos numéricos
+        if (!senha.matches("[0-9]+")) {
+            JOptionPane.showMessageDialog(null,
+                    "A senha deve conter apenas dígitos numéricos (0-9).");
+            return false;
+        }
+
+        // Verifica sequências repetidas (opcional, conforme enunciado)
+        if (temSequenciasRepetidas(senha)) {
+            JOptionPane.showMessageDialog(null,
+                    "A senha não pode conter sequências de números repetidos.");
+            return false;
+        }
+
+        // Verifica arquivos
+        if (!new File(caminhoCert).exists()) {
+            JOptionPane.showMessageDialog(null, "Certificado não encontrado.");
+            return false;
+        }
+
+        if (!new File(caminhoChave).exists()) {
+            JOptionPane.showMessageDialog(null, "Chave privada não encontrada.");
+            return false;
+        }
+
+        return true;
+    }
+
+    // Método auxiliar para verificar sequências repetidas
+    private boolean temSequenciasRepetidas(String senha) {
+        for (int i = 0; i < senha.length() - 1; i++) {
+            if (senha.charAt(i) == senha.charAt(i + 1)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
