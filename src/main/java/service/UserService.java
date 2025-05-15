@@ -1,7 +1,9 @@
 package service;
 
+import dao.GrupoDAO;
 import dao.UsuarioDAO;
 import dao.ChaveiroDAO;
+import model.Grupo;
 import model.Usuario;
 import model.Chaveiro;
 import ui.AdminSetupFrame;
@@ -53,6 +55,13 @@ public class UserService {
         // 1. Verifica se já existe usuário cadastrado
         if (!usuarioDao.findAll().isEmpty()) {
             return;
+        }
+
+        // inicializa o banco
+        GrupoDAO grupoDao = new GrupoDAO();
+        if (grupoDao.findAll().isEmpty()) {
+            Grupo admin = new Grupo(); admin.setNomeGrupo("Administrador"); grupoDao.insert(admin);
+            Grupo user = new Grupo(); user.setNomeGrupo("Usuário"); grupoDao.insert(user);
         }
 
         // 2. Exibe formulário e aguarda submissão
