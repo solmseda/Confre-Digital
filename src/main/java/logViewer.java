@@ -2,6 +2,7 @@
 import dao.RegistroDAO;
 import model.Registro;
 
+import java.util.Comparator;
 import java.util.List;
 
 
@@ -12,8 +13,9 @@ public class logViewer {
             RegistroDAO registroDAO = new RegistroDAO();
             List<Registro> registros = registroDAO.findAll();
 
+            registros.sort(Comparator.comparing(Registro::getTimestamp));
+
             registros.forEach(registro -> {
-                System.out.println("ID: " + registro.getRid());
                 System.out.println("Timestamp: " + registro.getTimestamp());
                 System.out.println("Detalhes: " + registro.getDetalhes());
                 System.out.println("------------------------------");

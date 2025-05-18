@@ -3,7 +3,7 @@ package ui;
 import dao.GrupoDAO;
 import dao.RegistroDAO;
 import model.Usuario;
-import service.ConsultaService;
+//import service.ConsultaService;
 
 import javax.swing.*;
 import java.awt.*;
@@ -69,12 +69,12 @@ public class TelaPrincipal extends JFrame {
         }
 
         // Consultar pasta de arquivos secretos (todos os grupos)
-        String consultLabel = user.getGid() == 1
-                ? "2 – Consultar pasta de arquivos secretos"
-                : "1 – Consultar pasta de arquivos secretos";
-        JButton btnConsultar = new JButton(consultLabel);
-        btnConsultar.addActionListener(e -> new ConsultaService().executarConsulta(user));
-        corpo2.add(btnConsultar);
+//        String consultLabel = user.getGid() == 1
+//                ? "2 – Consultar pasta de arquivos secretos"
+//                : "1 – Consultar pasta de arquivos secretos";
+//        JButton btnConsultar = new JButton(consultLabel);
+//        btnConsultar.addActionListener(e -> new ConsultaService().executarConsulta(user));
+//        corpo2.add(btnConsultar);
 
         // Sair do sistema / sessão
         String exitLabel = user.getGid() == 1
