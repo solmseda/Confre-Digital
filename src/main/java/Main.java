@@ -28,7 +28,6 @@ public class Main {
                     registroDAO.insert(regInit);
 
                     new CadastroService().executarCadastro();
-                    char[] adminPassphrase = CryptoUtils.getCurrentPassphrase();
 
                 } else {
                     JOptionPane.showMessageDialog(null,
