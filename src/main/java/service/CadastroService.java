@@ -1,6 +1,11 @@
 // service/CadastroService.java
 package service;
 
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.client.j2se.MatrixToImageWriter;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
 import dao.ChaveiroDAO;
 import dao.UsuarioDAO;
 import model.Chaveiro;
@@ -11,29 +16,34 @@ import util.TOTPUtil;
 
 import javax.swing.*;
 import javax.swing.BoxLayout;
+import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.File;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
 public class CadastroService {
 
     public void executarCadastro() {
-        JTextField  certField    = new JTextField(40);
-        JTextField  keyField     = new JTextField(40);
-        JPasswordField phraseF   = new JPasswordField(40);
-        JPasswordField passF     = new JPasswordField(10);
-        JPasswordField confirmF  = new JPasswordField(10);
+        JTextField      certField   = new JTextField(40);
+        JTextField      keyField    = new JTextField(40);
+        JPasswordField  phraseF     = new JPasswordField(40);
+        JPasswordField  passF       = new JPasswordField(10);
+        JPasswordField  confirmF    = new JPasswordField(10);
 
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.add(new JLabel("Certificado digital:"));   panel.add(certField);
-        panel.add(new JLabel("Chave privada:"));         panel.add(keyField);
-        panel.add(new JLabel("Frase secreta:"));                panel.add(phraseF);
+        panel.add(new JLabel("Certificado digital:"));        panel.add(certField);
+        panel.add(new JLabel("Chave privada:"));              panel.add(keyField);
+        panel.add(new JLabel("Frase secreta:"));              panel.add(phraseF);
         panel.add(new JLabel("Senha pessoal (8-10 dígitos):")); panel.add(passF);
-        panel.add(new JLabel("Confirmação da senha:"));         panel.add(confirmF);
+        panel.add(new JLabel("Confirmação da senha:"));       panel.add(confirmF);
 
         if (JOptionPane.showConfirmDialog(null, panel, "Cadastro do Administrador",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE)
@@ -50,7 +60,7 @@ public class CadastroService {
         try {
             if (!validarDados(senha, confirm, certPath, keyPath)) return;
 
-            //Carrega e extrai do certificado
+            // 1) Leitura e extração do certificado
             X509Certificate cert = CryptoUtils.lerCertificadoPEM(certPath);
             String email = CryptoUtils.extrairEmailDoCertificado(cert);
             String nome  = CryptoUtils.extrairNomeDoCertificado(cert);
@@ -59,13 +69,13 @@ public class CadastroService {
                 return;
             }
 
-            //Mostra confirmação completa do certificado
+            // 2) Confirmação visual dos dados do certificado
             String info = ""
-                    + "Versão:     " + cert.getVersion()           + "\n"
-                    + "Série:      " + cert.getSerialNumber()     + "\n"
+                    + "Versão:     " + cert.getVersion()       + "\n"
+                    + "Série:      " + cert.getSerialNumber() + "\n"
                     + "Validade:   de " + cert.getNotBefore()
-                    + " até "     + cert.getNotAfter()         + "\n"
-                    + "Assinatura: " + cert.getSigAlgName()        + "\n"
+                    + " até "      + cert.getNotAfter()       + "\n"
+                    + "Assinatura: " + cert.getSigAlgName()   + "\n"
                     + "Emissor:    " + cert.getIssuerX500Principal().getName()  + "\n"
                     + "Sujeito:    " + cert.getSubjectX500Principal().getName() + "\n"
                     + "E-mail:     " + email;
@@ -76,18 +86,18 @@ public class CadastroService {
                 return;
             }
 
-            //Decifra a chave privada PKCS#8 e valida com o certificado
+            // 3) Decifra e valida a chave privada
             PrivateKey priv = CryptoUtils.decifrarPrivateKeyPKCS8(keyPath, phrase);
             if (!CryptoUtils.validarPrivateKeyComCertificado(cert, priv)) {
                 JOptionPane.showMessageDialog(null, "Frase ou chave inválida.");
                 return;
             }
 
-            //Gera e cifra o segredo TOTP com AES da senha pessoal
+            // 4) Gera e cifra o segredo TOTP
             byte[] totpSecret    = TOTPUtil.gerarChaveSecreta();
             byte[] totpSecretEnc = CryptoUtils.cifrarComAES256(totpSecret, senha.toCharArray());
 
-            //Persiste o usuário
+            // 5) Persiste o usuário no banco
             Usuario u = new Usuario();
             u.setLoginEmail(email);
             u.setNome(nome);
@@ -96,7 +106,7 @@ public class CadastroService {
             u.setGid(1);  // administrador
             new UsuarioDAO().insert(u);
 
-            //Persiste o Chaveiro
+            // 6) Persiste o Chaveiro
             Chaveiro c = new Chaveiro();
             c.setUid(u.getUid());
             c.setCertPem(new String(Files.readAllBytes(new File(certPath).toPath()),
@@ -104,23 +114,54 @@ public class CadastroService {
             c.setPrivateKeyEnc(CryptoUtils.cifrarComAES256(priv.getEncoded(), phrase));
             new ChaveiroDAO().insert(c);
 
-            //Exibe Base32 e URI para QR Code
+            // 7) Converte segredo em Base32
             String b32 = new Base32(Base32.Alphabet.BASE32, false, false)
                     .toString(totpSecret);
+
+            // 8) Exibe o segredo Base32 e a URI TOTP
+            String issuer = "Cofre Digital";
+            String label  = URLEncoder.encode(issuer + ":" + email, StandardCharsets.UTF_8.name());
+            String issuerQ= URLEncoder.encode(issuer, StandardCharsets.UTF_8.name());
+            String otpUri = String.format(
+                    "otpauth://totp/%s?secret=%s&issuer=%s",
+                    label, b32, issuerQ
+            );
+
             JOptionPane.showMessageDialog(null,
-                    "Segredo TOTP:\n" + b32 +
-                            "\n\nURI:\n" +
-                            "otpauth://totp/Cofre%20Digital:" + email +
-                            "?secret=" + b32
+                    "Segredo TOTP (Base32):\n" + b32 + "\n\nURI:\n" + otpUri,
+                    "TOTP Secret", JOptionPane.INFORMATION_MESSAGE
+            );
+
+            // 9) Gera o QR Code a partir da URI
+            QRCodeWriter qrWriter = new QRCodeWriter();
+            Map<EncodeHintType,Object> hints = new HashMap<>();
+            hints.put(EncodeHintType.MARGIN, 1);
+            BitMatrix matrix = qrWriter.encode(otpUri,
+                    BarcodeFormat.QR_CODE,
+                    200, 200,
+                    hints);
+            BufferedImage qrImage = MatrixToImageWriter.toBufferedImage(matrix);
+
+            // 10) Exibe o QR Code em diálogo
+            JLabel picLabel = new JLabel(new ImageIcon(qrImage));
+            picLabel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
+            JPanel qrPanel = new JPanel(new BorderLayout());
+            qrPanel.add(new JLabel("Escaneie este QR Code no Google Authenticator:"), BorderLayout.NORTH);
+            qrPanel.add(picLabel, BorderLayout.CENTER);
+
+            JOptionPane.showMessageDialog(null,
+                    qrPanel,
+                    "QR Code TOTP",
+                    JOptionPane.PLAIN_MESSAGE
             );
 
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(null,
                     "Erro no cadastro: " + ex.getClass().getSimpleName()
-                            + ": " + ex.getMessage()
-            );
+                            + ": " + ex.getMessage(),
+                    "Erro", JOptionPane.ERROR_MESSAGE);
         } finally {
-            //Limpando senhas/arrays da UI
+            // Limpa frases e senhas da memória
             Arrays.fill(phrase, ' ');
             Arrays.fill(passF.getPassword(), ' ');
             Arrays.fill(confirmF.getPassword(), ' ');

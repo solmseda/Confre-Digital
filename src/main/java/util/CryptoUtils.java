@@ -41,13 +41,36 @@ public class CryptoUtils {
         String dn = cert.getSubjectX500Principal().getName();
         for (String parte : dn.split(",")) {
             parte = parte.trim();
-            if (parte.startsWith("E=") || parte.startsWith("EMAIL=")
-                    || parte.startsWith("1.2.840.113549.1.9.1=")) {
-                return parte.substring(parte.indexOf('=') + 1).trim();
+            int eq = parte.indexOf('=');
+            if (eq < 0) continue;
+            String chave = parte.substring(0, eq).trim();
+            String valor = parte.substring(eq + 1).trim();
+
+            boolean isEmailOid = chave.equalsIgnoreCase("E")
+                    || chave.equalsIgnoreCase("EMAIL")
+                    || chave.equals("1.2.840.113549.1.9.1");
+
+            if (!isEmailOid) continue;
+
+            // Se vier como hex (padrão RFC2253), decodifica
+            if (valor.startsWith("#")) {
+                // retira o '#' e converte cada par de hex em byte
+                byte[] der = hexStringToByteArray(valor.substring(1));
+                // DER-IA5String tem tag 0x16, seguido de comprimento
+                if (der.length > 2 && (der[0] & 0x1F) == 0x16) {
+                    int len = der[1] & 0xFF;
+                    return new String(der, 2, len, java.nio.charset.StandardCharsets.UTF_8);
+                }
+                // fallback: tenta decodificar tudo como UTF-8
+                return new String(der, java.nio.charset.StandardCharsets.UTF_8);
             }
+
+            // Se não for hex, retorna o valor cru
+            return valor;
         }
         return null;
     }
+
 
     /** Extrai CN (Common Name) do Subject. */
     public static String extrairNomeDoCertificado(X509Certificate cert) {
@@ -168,4 +191,19 @@ public class CryptoUtils {
 
     public static char[]     getCurrentPassphrase()    { return currentPassphrase; }
     public static PrivateKey getCurrentPrivateKey()    { return currentPrivateKey; }
+
+    /** Converte uma string hex (pares de dígitos) em um array de bytes */
+    public static byte[] hexStringToByteArray(String s) {
+        int len = s.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            int hi = Character.digit(s.charAt(i), 16);
+            int lo = Character.digit(s.charAt(i + 1), 16);
+            if (hi < 0 || lo < 0) {
+                throw new IllegalArgumentException("Hex inválido em " + s);
+            }
+            data[i / 2] = (byte) ((hi << 4) + lo);
+        }
+        return data;
+    }
 }
