@@ -221,6 +221,7 @@ public class LoginFrame extends JFrame {
             JOptionPane.showMessageDialog(this, "Autenticado com sucesso!",
                     "Sucesso", JOptionPane.INFORMATION_MESSAGE);
             dispose();
+            new TelaPrincipal(currentUser).setVisible(true);
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Erro no TOTP: " + ex.getMessage(),
                     "Erro", JOptionPane.ERROR_MESSAGE);

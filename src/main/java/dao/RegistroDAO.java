@@ -90,4 +90,15 @@ public class RegistroDAO {
         r.setDetalhes(rs.getString("detalhes"));
         return r;
     }
+
+    public int countByUid(int uid) throws SQLException {
+        String sql = "SELECT COUNT(*) FROM Registros WHERE UID = ?";
+        try (Connection c = ConnectionFactory.getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setInt(1, uid);
+            ResultSet rs = ps.executeQuery();
+            return rs.next() ? rs.getInt(1) : 0;
+        }
+    }
+
 }
