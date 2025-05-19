@@ -2,7 +2,11 @@ import dao.RegistroDAO;
 import dao.UsuarioDAO;
 import model.Registro;
 import service.CadastroService;
-import util.CryptoUtils;
+/*
+ * Trabalho 3 de Segurança da Informação
+ * Sol Castilho Araújo de Moraes Sêda - 2511704
+ * Leonardo Giuri Santiago - 2410725
+ */
 import ui.LoginFrame;
 
 import javax.swing.*;

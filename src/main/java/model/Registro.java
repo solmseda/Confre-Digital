@@ -1,7 +1,11 @@
 package model;
 
 import java.time.LocalDateTime;
-
+/*
+ * Trabalho 3 de Segurança da Informação
+ * Sol Castilho Araújo de Moraes Sêda - 2511704
+ * Leonardo Giuri Santiago - 2410725
+ */
 public class Registro {
     private Long rid;
     private LocalDateTime timestamp;

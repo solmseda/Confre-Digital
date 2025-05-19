@@ -1,3 +1,9 @@
+/*
+ * Trabalho 3 de Segurança da Informação
+ * Sol Castilho Araújo de Moraes Sêda - 2511704
+ * Leonardo Giuri Santiago - 2410725
+ */
+
 package ui;
 
 import dao.RegistroDAO;
@@ -19,11 +25,6 @@ import java.security.Signature;
 import java.security.SignatureException;
 import java.security.cert.X509Certificate;
 import java.sql.SQLException;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Vector;
-
-import static org.bouncycastle.asn1.x500.style.RFC4519Style.owner;
 
 /**
  * ConsultaFrame: atende à etapa de consulta de arquivos secretos,

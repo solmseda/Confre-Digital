@@ -1,4 +1,9 @@
-// service/CadastroService.java
+/*
+ * Trabalho 3 de Segurança da Informação
+ * Sol Castilho Araújo de Moraes Sêda - 2511704
+ * Leonardo Giuri Santiago - 2410725
+ */
+
 package service;
 
 import com.google.zxing.BarcodeFormat;
