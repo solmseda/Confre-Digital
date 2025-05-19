@@ -106,6 +106,28 @@ public class ChaveiroDAO {
     }
 
     /**
+     * Retorna o último registro de chaveiro (privateKeyEnc + certPem) para o usuário.
+     */
+    public Chaveiro findByUid(int uid) throws SQLException {
+        String sql = "SELECT * FROM Chaveiro WHERE UID = ? ORDER BY criado_em DESC LIMIT 1";
+        try (Connection c = ConnectionFactory.getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setInt(1, uid);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    Chaveiro ch = new Chaveiro();
+                    ch.setKid(rs.getInt("KID"));
+                    ch.setUid(rs.getInt("UID"));
+                    ch.setCertPem(rs.getString("cert_pem"));
+                    ch.setPrivateKeyEnc(rs.getBytes("private_key_enc"));
+                    return ch;
+                }
+                return null;
+            }
+        }
+    }
+
+    /**
      * Constrói um objeto Chaveiro a partir de um ResultSet.
      * OBS: removida a leitura de 'criado_em' para evitar SQLException
      * caso essa coluna não exista no schema.

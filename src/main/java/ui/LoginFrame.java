@@ -82,19 +82,32 @@ public class LoginFrame extends JFrame {
 
         // Etapa 2
         JPanel senhaPanel = new JPanel(new BorderLayout(10,10));
-        pfSenha.setEditable(false); senhaPanel.add(pfSenha, BorderLayout.NORTH);
-        JPanel teclasPanel = new JPanel(new GridLayout(1,5,5,5));
+        pfSenha.setEditable(false);
+        senhaPanel.add(pfSenha, BorderLayout.NORTH);
+
+        JPanel teclasPanel = new JPanel(new GridLayout(2, 4, 5, 5));
+
         for (int i = 0; i < 5; i++) {
             JButton b = new JButton();
             senhaButtons.add(b);
             teclasPanel.add(b);
             b.addActionListener(evt -> {
-                String pair = b.getText();
+                String pair = b.getText();      // ex: "1-9"
                 clickedPairs.add(pair);
                 pfSenha.setText("*".repeat(clickedPairs.size()));
                 embaralharTeclas();
             });
         }
+
+        teclasPanel.add(btnOk);
+        btnOk.addActionListener(e -> performPasswordValidation());
+        teclasPanel.add(btnLimpar);
+        btnLimpar.addActionListener(e -> {
+            clickedPairs.clear();
+            pfSenha.setText("");
+        });
+        teclasPanel.add(new JLabel());
+
         senhaPanel.add(teclasPanel, BorderLayout.CENTER);
         JPanel pwdActions = new JPanel();
         pwdActions.add(btnOk); pwdActions.add(btnLimpar);

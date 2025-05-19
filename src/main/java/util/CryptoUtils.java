@@ -1,6 +1,8 @@
 // util/CryptoUtils.java
 package util;
 
+import dao.ChaveiroDAO;
+import model.Chaveiro;
 import org.bouncycastle.crypto.generators.OpenBSDBCrypt;
 
 import javax.crypto.Cipher;
@@ -8,6 +10,8 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -191,6 +195,62 @@ public class CryptoUtils {
 
     public static char[]     getCurrentPassphrase()    { return currentPassphrase; }
     public static PrivateKey getCurrentPrivateKey()    { return currentPrivateKey; }
+
+    /**
+     * Decifra o “envelope” RSA (arquivo .env) usando a private key.
+     * Retorna o seed puro (byte[]).
+     */
+    public static byte[] decifrarEnvelope(File envFile, PrivateKey priv) throws Exception {
+        byte[] env = Files.readAllBytes(envFile.toPath());
+        Cipher rsa = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        rsa.init(Cipher.DECRYPT_MODE, priv);
+        return rsa.doFinal(env);
+    }
+
+    /**
+     * Gera a chave AES (128 bits) a partir do seed, usando SHA1PRNG conforme o enunciado.
+     */
+    public static byte[] generateAESKey(byte[] seed) throws Exception {
+        SecureRandom prng = SecureRandom.getInstance("SHA1PRNG");
+        prng.setSeed(seed);
+        KeyGenerator kg = KeyGenerator.getInstance("AES");
+        kg.init(128, prng);
+        SecretKey key = kg.generateKey();
+        return key.getEncoded();
+    }
+
+    /**
+     * Decripta dados com AES/ECB/PKCS5Padding.
+     */
+    public static byte[] decryptAesEcbPkcs5(byte[] data, byte[] aesKey) throws Exception {
+        Cipher aes = Cipher.getInstance("AES/ECB/PKCS5Padding");
+        SecretKeySpec spec = new SecretKeySpec(aesKey, "AES");
+        aes.init(Cipher.DECRYPT_MODE, spec);
+        return aes.doFinal(data);
+    }
+
+    /**
+     * Lê do banco a entidade Chaveiro do usuário e decifra sua private key PKCS#8,
+     * usando o mesmo método que você já tinha para arquivos.
+     */
+    public static PrivateKey getUserPrivateKey(int uid, char[] frase) throws Exception {
+        Chaveiro c = new ChaveiroDAO().findByUid(uid);
+        byte[] privBytes = decifrarComAES256(c.getPrivateKeyEnc(), frase); // seu método existente
+        KeyFactory kf = KeyFactory.getInstance("RSA");
+        return kf.generatePrivate(new PKCS8EncodedKeySpec(privBytes));
+    }
+
+    /**
+     * Carrega o certificado do administrador (usado para verificar as assinaturas).
+     * Pode ler de um arquivo fixo, ou da tabela Chaveiro/Gerenciador de certificados.
+     */
+    public static X509Certificate loadAdminCert() throws Exception {
+        // por exemplo, se você mantiver o PEM em resources/admin_cert.pem:
+        try (InputStream in = CryptoUtils.class.getResourceAsStream("/admin_cert.pem")) {
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            return (X509Certificate) cf.generateCertificate(in);
+        }
+    }
 
     /** Converte uma string hex (pares de dígitos) em um array de bytes */
     public static byte[] hexStringToByteArray(String s) {
