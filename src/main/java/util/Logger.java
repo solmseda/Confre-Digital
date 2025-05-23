@@ -7,7 +7,7 @@ import model.Registro;
 import java.sql.SQLException;
 
 public class Logger {
-    public static void logRegister(String mid) throws SQLException {
+    public static void registra(String mid) throws SQLException {
         RegistroDAO registroDAO = new RegistroDAO();
         MensagemDAO mensagemDAO = new MensagemDAO();
 
