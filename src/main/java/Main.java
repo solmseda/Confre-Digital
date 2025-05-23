@@ -20,7 +20,7 @@ public class Main {
         SwingUtilities.invokeLater(() -> {
             try {
                 UsuarioDAO usuarioDAO   = new UsuarioDAO();
-                Logger.logRegister("1001");
+                Logger.registra("1001");
 
 
                 if (usuarioDAO.findAll().isEmpty()) {
@@ -31,7 +31,7 @@ public class Main {
                             JOptionPane.INFORMATION_MESSAGE);
 
 
-                    Logger.logRegister("1005");
+                    Logger.registra("1005");
 
                     new CadastroService().executarCadastro();
 
@@ -41,7 +41,7 @@ public class Main {
                             "Cofre Digital",
                             JOptionPane.INFORMATION_MESSAGE);
 
-                    Logger.logRegister("1006");
+                    Logger.registra("1006");
                 }
 
                 //Inicia a tela de login multifator (3 etapas)
