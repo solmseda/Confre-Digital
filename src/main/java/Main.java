@@ -1,7 +1,11 @@
 import dao.RegistroDAO;
 import dao.UsuarioDAO;
+import dao.MensagemDAO;
+import model.Mensagem;
 import model.Registro;
 import service.CadastroService;
+import util.Logger;
+
 /*
  * Trabalho 3 de Segurança da Informação
  * Sol Castilho Araújo de Moraes Sêda - 2511704
@@ -16,7 +20,8 @@ public class Main {
         SwingUtilities.invokeLater(() -> {
             try {
                 UsuarioDAO usuarioDAO   = new UsuarioDAO();
-                RegistroDAO registroDAO = new RegistroDAO();
+                Logger.logRegister("1001");
+
 
                 if (usuarioDAO.findAll().isEmpty()) {
                     // Primeira execução
@@ -25,11 +30,8 @@ public class Main {
                             "Cofre Digital – Configuração Inicial",
                             JOptionPane.INFORMATION_MESSAGE);
 
-                    Registro regInit = new Registro();
-                    regInit.setMid(1005);
-                    regInit.setUid(null);
-                    regInit.setDetalhes("Partida do sistema iniciada para cadastro do administrador");
-                    registroDAO.insert(regInit);
+
+                    Logger.logRegister("1005");
 
                     new CadastroService().executarCadastro();
 
@@ -39,11 +41,7 @@ public class Main {
                             "Cofre Digital",
                             JOptionPane.INFORMATION_MESSAGE);
 
-                    Registro regNorm = new Registro();
-                    regNorm.setMid(1006);
-                    regNorm.setUid(null);
-                    regNorm.setDetalhes("Partida do sistema iniciada para operação normal pelos usuários");
-                    registroDAO.insert(regNorm);
+                    Logger.logRegister("1006");
                 }
 
                 //Inicia a tela de login multifator (3 etapas)
