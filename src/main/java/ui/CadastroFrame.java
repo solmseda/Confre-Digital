@@ -14,10 +14,15 @@ import model.Chaveiro;
 import model.Registro;
 import model.Usuario;
 import util.CryptoUtils;
+import util.TOTPUtil;
+import util.Base32;
+import util.QRCodeUtils;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.File;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.PrivateKey;
@@ -28,8 +33,7 @@ import java.util.Arrays;
 /**
  * JFrame para o Cadastro de Usuário no Cofre Digital.
  * Permite ao administrador cadastrar novos usuários com
- * informações como certificado digital, chave privada,
- * frase secreta, grupo e senha pessoal.
+ * geração de TOTP e QR Code de configuração.
  */
 public class CadastroFrame extends JFrame {
     private final Usuario currentUser;
@@ -64,42 +68,39 @@ public class CadastroFrame extends JFrame {
         header.add(new JLabel("Nome:   " + currentUser.getNome()));
         add(header, BorderLayout.NORTH);
 
-        // Corpo 1
-        JPanel corpo1 = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        corpo1.setBorder(BorderFactory.createTitledBorder("Informações"));
-        corpo1.add(new JLabel("Total de usuários do sistema: " + usuarioDao.findAll().size()));
-        add(corpo1, BorderLayout.CENTER);
-
-        // Corpo 2
-        JPanel corpo2 = new JPanel(new GridBagLayout());
-        corpo2.setBorder(BorderFactory.createTitledBorder("Formulário de Cadastro"));
+        // Corpo de formulário
+        JPanel corpo = new JPanel(new GridBagLayout());
+        corpo.setBorder(BorderFactory.createTitledBorder("Formulário de Cadastro"));
         GridBagConstraints c = new GridBagConstraints();
-        c.insets = new Insets(4,4,4,4); c.fill = GridBagConstraints.HORIZONTAL;
-        c.gridx=0; c.gridy=0; corpo2.add(new JLabel("Certificado digital:"),c);
-        c.gridx=1; corpo2.add(certField,c);
-        c.gridx=0; c.gridy++; corpo2.add(new JLabel("Chave privada:"),c);
-        c.gridx=1; corpo2.add(keyField,c);
-        c.gridx=0; c.gridy++; corpo2.add(new JLabel("Frase secreta:"),c);
-        c.gridx=1; corpo2.add(phraseF,c);
-        c.gridx=0; c.gridy++; corpo2.add(new JLabel("Grupo:"),c);
-        c.gridx=1; corpo2.add(groupCombo,c);
-        c.gridx=0; c.gridy++; corpo2.add(new JLabel("Senha pessoal:"),c);
-        c.gridx=1; corpo2.add(passF,c);
-        c.gridx=0; c.gridy++; corpo2.add(new JLabel("Confirmação senha:"),c);
-        c.gridx=1; corpo2.add(confirmF,c);
+        c.insets = new Insets(4,4,4,4);
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.gridx=0; c.gridy=0; corpo.add(new JLabel("Certificado digital:"), c);
+        c.gridx=1; corpo.add(certField, c);
+        c.gridx=0; c.gridy++; corpo.add(new JLabel("Chave privada:"), c);
+        c.gridx=1; corpo.add(keyField, c);
+        c.gridx=0; c.gridy++; corpo.add(new JLabel("Frase secreta:"), c);
+        c.gridx=1; corpo.add(phraseF, c);
+        c.gridx=0; c.gridy++; corpo.add(new JLabel("Grupo:"), c);
+        c.gridx=1; corpo.add(groupCombo, c);
+        c.gridx=0; c.gridy++; corpo.add(new JLabel("Senha pessoal:"), c);
+        c.gridx=1; corpo.add(passF, c);
+        c.gridx=0; c.gridy++; corpo.add(new JLabel("Confirmação senha:"), c);
+        c.gridx=1; corpo.add(confirmF, c);
 
+        // Botões
         JPanel buttons = new JPanel();
         JButton btnCadastrar = new JButton("Cadastrar");
         JButton btnVoltar    = new JButton("Voltar");
-        buttons.add(btnCadastrar); buttons.add(btnVoltar);
+        buttons.add(btnCadastrar);
+        buttons.add(btnVoltar);
 
-        JPanel south = new JPanel(new BorderLayout());
-        south.add(corpo2, BorderLayout.CENTER);
-        south.add(buttons, BorderLayout.SOUTH);
-        add(south, BorderLayout.SOUTH);
+        // Layout final
+        add(corpo, BorderLayout.CENTER);
+        add(buttons, BorderLayout.SOUTH);
+        pack();
+        setLocationRelativeTo(null);
 
-        pack(); setLocationRelativeTo(null);
-
+        // Ações
         btnVoltar.addActionListener(e -> {
             dispose();
             try {
@@ -118,67 +119,99 @@ public class CadastroFrame extends JFrame {
                 String confirm  = new String(confirmF.getPassword());
                 int gidNovo     = groupCombo.getSelectedIndex() == 0 ? 1 : 2;
 
+                // Valida senhas
                 if (!senha.equals(confirm)) {
                     JOptionPane.showMessageDialog(this, "Senhas não coincidem.", "Erro", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
 
-                // extrai cert
+                // 1) Carrega e valida certificado
                 X509Certificate cert = CryptoUtils.lerCertificadoPEM(certPath);
                 String email = CryptoUtils.extrairEmailDoCertificado(cert);
                 String nome  = CryptoUtils.extrairNomeDoCertificado(cert);
-                // confirma dados do cert
                 String info = String.format(
-                        "Versão: %d\nSérie: %s\nValidade: de %s até %s\n" +
-                                "Assinatura: %s\nEmissor: %s\nSujeito: %s\nE-mail: %s",
-                        cert.getVersion(), cert.getSerialNumber().toString(), cert.getNotBefore(), cert.getNotAfter(),
+                        "Versão: %d\nSérie: %s\nValidade: de %s até %s\nAssinatura: %s\nEmissor: %s\nSujeito: %s\nE-mail: %s",
+                        cert.getVersion(), cert.getSerialNumber(), cert.getNotBefore(), cert.getNotAfter(),
                         cert.getSigAlgName(), cert.getIssuerX500Principal().getName(),
                         cert.getSubjectX500Principal().getName(), email
                 );
-                if (JOptionPane.showConfirmDialog(this, info,
-                        "Confirme os dados do certificado", JOptionPane.OK_CANCEL_OPTION)
+                if (JOptionPane.showConfirmDialog(this, info, "Confirme os dados do certificado", JOptionPane.OK_CANCEL_OPTION)
                         != JOptionPane.OK_OPTION) {
                     JOptionPane.showMessageDialog(this, "Cadastro cancelado.");
                     return;
                 }
 
-                // verifica unicidade de login
+                // 2) Unicidade de login
                 if (usuarioDao.findByEmail(email) != null) {
                     JOptionPane.showMessageDialog(this, "E-mail já cadastrado.", "Erro", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
 
-                // decifra chave e persiste
+                // 3) Decifra e valida chave privada
                 PrivateKey priv = CryptoUtils.decifrarPrivateKeyPKCS8(keyPath, phrase);
                 if (!CryptoUtils.validarPrivateKeyComCertificado(cert, priv)) {
                     JOptionPane.showMessageDialog(this, "Chave ou frase secreta inválida.", "Erro", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
+
+                // 4) Gera e cifra segredo TOTP
+                byte[] totpSecret    = TOTPUtil.gerarChaveSecreta();
+                byte[] totpSecretEnc = CryptoUtils.cifrarComAES256(totpSecret, senha.toCharArray());
+
+                // 5) Persiste o usuário
                 Usuario u = new Usuario();
-                u.setLoginEmail(email); u.setNome(nome);
+                u.setLoginEmail(email);
+                u.setNome(nome);
                 u.setSenhaBcrypt(CryptoUtils.gerarHashBcrypt(senha));
-                u.setTotpSecretEnc(new byte[0]); u.setGid(gidNovo);
+                u.setTotpSecretEnc(totpSecretEnc);
+                u.setGid(gidNovo);
                 usuarioDao.insert(u);
 
+                // 6) Persiste chaveiro
                 Chaveiro chav = new Chaveiro();
                 chav.setUid(u.getUid());
                 chav.setCertPem(new String(Files.readAllBytes(new File(certPath).toPath()), StandardCharsets.UTF_8));
                 chav.setPrivateKeyEnc(CryptoUtils.cifrarComAES256(priv.getEncoded(), phrase));
                 chaveiroDao.insert(chav);
 
-                Registro r = new Registro(); r.setMid(6002);
-                r.setUid(currentUser.getUid()); r.setDetalhes("Cadastro de " + email);
+                // 7) Gera Base32 e URI otpauth
+                String b32     = new Base32(Base32.Alphabet.BASE32, false, false).toString(totpSecret);
+                String issuer  = "Cofre Digital";
+                String label   = URLEncoder.encode(issuer + ":" + email, StandardCharsets.UTF_8.name());
+                String issuerQ = URLEncoder.encode(issuer, StandardCharsets.UTF_8.name());
+                String otpUri  = String.format("otpauth://totp/%s?secret=%s&issuer=%s", label, b32, issuerQ);
+
+                // 8) Exibe segredo e URI
+                JOptionPane.showMessageDialog(this,
+                        "Segredo TOTP (Base32):\n" + b32 + "\n\nURI:\n" + otpUri,
+                        "TOTP Secret", JOptionPane.INFORMATION_MESSAGE
+                );
+
+                // 9) Gera e exibe QR Code
+                BufferedImage qrImage = QRCodeUtils.generateQRCodeImage(otpUri, 200, 200);
+                JLabel picLabel = new JLabel(new ImageIcon(qrImage));
+                picLabel.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
+                JPanel qrPanel = new JPanel(new BorderLayout());
+                qrPanel.add(new JLabel("Escaneie este QR Code no Google Authenticator:"), BorderLayout.NORTH);
+                qrPanel.add(picLabel, BorderLayout.CENTER);
+                JOptionPane.showMessageDialog(this, qrPanel, "QR Code TOTP", JOptionPane.PLAIN_MESSAGE);
+
+                // 10) Registro de auditoria
+                Registro r = new Registro();
+                r.setMid(6002);
+                r.setUid(currentUser.getUid());
+                r.setDetalhes("Cadastro de " + email);
                 registroDao.insert(r);
 
-                JOptionPane.showMessageDialog(this, "Usuário cadastrado com sucesso!",
-                        "Sucesso", JOptionPane.INFORMATION_MESSAGE);
-                dispose(); new TelaPrincipal(currentUser).setVisible(true);
+                JOptionPane.showMessageDialog(this, "Usuário cadastrado com sucesso!", "Sucesso", JOptionPane.INFORMATION_MESSAGE);
+                dispose();
+                new TelaPrincipal(currentUser).setVisible(true);
 
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Erro ao cadastrar: " + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
             } finally {
                 Arrays.fill(phraseF.getPassword(), ' ');
-                Arrays.fill(passF.getPassword(), ' ');
+                Arrays.fill(passF.getPassword(),    ' ');
                 Arrays.fill(confirmF.getPassword(), ' ');
             }
         });
