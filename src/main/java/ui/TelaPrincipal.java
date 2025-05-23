@@ -82,7 +82,7 @@ public class TelaPrincipal extends JFrame {
             dispose();              // fecha o menu principal
             try {
                 new ConsultaFrame(user).setVisible(true);
-            } catch (SQLException ex) {
+            } catch (Exception ex) {
                 JOptionPane.showMessageDialog(
                         this,
                         "Erro ao abrir consulta:\n" + ex.getMessage(),

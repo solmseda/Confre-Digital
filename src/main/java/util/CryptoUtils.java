@@ -219,7 +219,7 @@ public class CryptoUtils {
         SecureRandom prng = SecureRandom.getInstance("SHA1PRNG");
         prng.setSeed(seed);
         KeyGenerator kg = KeyGenerator.getInstance("AES");
-        kg.init(128, prng);
+        kg.init(256, prng);
         SecretKey key = kg.generateKey();
         return key.getEncoded();
     }

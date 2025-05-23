@@ -12,7 +12,7 @@
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
-      <module name="CofreDigital" options="--add-modules java.desktop,java.sql" />
+      <module name="CofreDigital" options="" />
     </option>
   </component>
 </project>
