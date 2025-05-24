@@ -15,7 +15,9 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.security.*;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.Signature;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.sql.SQLException;
@@ -38,7 +40,7 @@ public class ConsultaFrame extends JFrame {
         this.currentUser = user;
         tableModel = new DefaultTableModel(new String[]{"Código","Nome","Dono","Grupo"}, 0);
         table = new JTable(tableModel);
-        initComponents();  // configura UI e listeners
+        initComponents();
     }
 
     private void initComponents() throws Exception {
@@ -54,7 +56,7 @@ public class ConsultaFrame extends JFrame {
         header.add(new JLabel(grupoDao.findById(currentUser.getGid()).getNomeGrupo()));
         add(header, BorderLayout.NORTH);
 
-        // Formulário de parâmetros
+        // Formulário
         JPanel form = new JPanel(new GridBagLayout());
         form.setBorder(BorderFactory.createTitledBorder("Parâmetros da Consulta"));
         GridBagConstraints gbc = new GridBagConstraints();
@@ -65,26 +67,22 @@ public class ConsultaFrame extends JFrame {
         gbc.gridx = 1;
         form.add(dirField, gbc);
         gbc.gridx = 0; gbc.gridy = 1;
-        form.add(new JLabel("Frase secreta:"), gbc);
+        form.add(new JLabel("Frase secreta (usuário):"), gbc);
         gbc.gridx = 1;
         form.add(passField, gbc);
         gbc.gridx = 1; gbc.gridy = 2; gbc.anchor = GridBagConstraints.EAST;
         form.add(btnList, gbc);
         add(form, BorderLayout.WEST);
 
-        // Tabela de resultados
+        // Tabela
         add(new JScrollPane(table), BorderLayout.CENTER);
-
-        // Duplo clique para decriptar arquivo
         table.addMouseListener(new MouseAdapter() {
             public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
-                    onDecryptSelected();
-                }
+                if (e.getClickCount() == 2) onDecryptSelected();
             }
         });
 
-        // Botão Voltar
+        // Rodapé
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         footer.add(btnBack);
         add(footer, BorderLayout.SOUTH);
@@ -104,10 +102,10 @@ public class ConsultaFrame extends JFrame {
         setLocationRelativeTo(null);
     }
 
-    // 1) Listar índice: decifra, verifica e popula tabela
     private void onList() {
         try {
-            File dir = new File(dirField.getText());
+            // 1) Verifica existência dos arquivos de índice
+            File dir     = new File(dirField.getText());
             File envFile = new File(dir, "index.env");
             File encFile = new File(dir, "index.enc");
             File sigFile = new File(dir, "index.asd");
@@ -118,34 +116,61 @@ public class ConsultaFrame extends JFrame {
                 return;
             }
 
-            // Decifra chave privada do usuário
-            byte[] encKey = chaveiroDao.findByUid(currentUser.getUid()).getPrivateKeyEnc();
-            PrivateKey priv = decryptPrivateKey(encKey, passField.getPassword());
+            // 2) Obtém private key do ADMIN em memória
+            PrivateKey adminPriv = CryptoUtils.getCurrentPrivateKey();
+            if (adminPriv == null) {
+                JOptionPane.showMessageDialog(this,
+                        "Chave do administrador não carregada em memória!",
+                        "Erro", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
 
-            // Decifra envelope -> seed e gera AES
-            byte[] seed = CryptoUtils.decifrarEnvelope(envFile, priv);
-            byte[] aesKeyBytes = CryptoUtils.generateAESKey(seed);
+            byte[] seed   = CryptoUtils.decifrarEnvelope(envFile, adminPriv);
+            byte[] aesKey = CryptoUtils.generateAESKey(seed);
 
-            // Verifica assinatura do índice
-            byte[] cipherData = Files.readAllBytes(encFile.toPath());
-            X509Certificate adminCert = loadAdminCert();
-            System.out.println("Admin cert serial: " + adminCert.getSerialNumber());
-            System.out.println("Algoritmo de assinatura do cert: " + adminCert.getSigAlgName());
-            verifyAdminSignature(adminCert, cipherData, sigFile);
+            // 4) Decripta index.enc
+            byte[] cipherIndex = Files.readAllBytes(encFile.toPath());
+            byte[] plainIndex  = CryptoUtils.decryptAesEcbPkcs5(cipherIndex, aesKey);
 
-            // Decripta e popula tabela
-            byte[] plainData = CryptoUtils.decryptAesEcbPkcs5(cipherData, aesKeyBytes);
-            String decryptedContent = new String(plainData, StandardCharsets.UTF_8);
-            populateFileTable(decryptedContent);
+            // 5) Carrega assinatura e certificado
+            byte[] sigBytes      = Files.readAllBytes(sigFile.toPath());
+            X509Certificate cert = loadAdminCert();
 
-        } catch (SecurityException e) {
-            showSignatureError(e);
-        } catch (Exception ex) {
-            showGenericError(ex);
+            // 6) Tenta verificar sobre o plaintext com vários algoritmos
+            String[] algs = {"SHA256withRSA", "SHA1withRSA"};
+            boolean ok = false;
+            for (String alg : algs) {
+                try {
+                    Signature v = Signature.getInstance(alg);
+                    v.initVerify(cert.getPublicKey());
+                    v.update(plainIndex);
+                    if (v.verify(sigBytes)) {
+                        System.out.println("[LOG] Assinatura validada com " + alg);
+                        ok = true;
+                        break;
+                    } else {
+                        System.out.println("[LOG] Falhou com " + alg);
+                    }
+                } catch (NoSuchAlgorithmException e) {
+                    System.out.println("[LOG] Algoritmo não suportado: " + alg);
+                }
+            }
+
+            if (!ok) {
+                throw new SecurityException("Assinatura digital inválida em todos os algoritmos tentados.");
+            }
+
+            // 7) Popula a tabela
+            String content = new String(plainIndex, StandardCharsets.UTF_8);
+            populateFileTable(content);
+
+        } catch (SecurityException se) {
+            showSignatureError(se);
+        } catch (Exception e) {
+            showGenericError(e);
         }
     }
 
-    // 2) Duplo clique: decripta arquivo secreto selecionado
     private void onDecryptSelected() {
         int row = table.getSelectedRow();
         if (row < 0) return;
@@ -167,148 +192,103 @@ public class ConsultaFrame extends JFrame {
             File sigFile = new File(dir, code + ".asd");
             if (!envFile.exists() || !encFile.exists() || !sigFile.exists()) {
                 JOptionPane.showMessageDialog(this,
-                        "Faltando arquivos .env, .enc ou .asd para " + code,
+                        "Faltando .env, .enc ou .asd para " + code,
                         "Erro", JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
-            // Redecifra chave privada e envelope
-            byte[] encKey = chaveiroDao.findByUid(currentUser.getUid()).getPrivateKeyEnc();
-            PrivateKey priv = decryptPrivateKey(encKey, passField.getPassword());
-            byte[] seed = CryptoUtils.decifrarEnvelope(envFile, priv);
-            byte[] aesKeyBytes = CryptoUtils.generateAESKey(seed);
+            // Decifrar envelope do arquivo usando a chave DO USUÁRIO
+            byte[] seed = CryptoUtils.decifrarEnvelope(envFile, decryptPrivateKey(
+                    chaveiroDao.findByUid(currentUser.getUid()).getPrivateKeyEnc(),
+                    passField.getPassword()
+            ));
+            byte[] aesKey = CryptoUtils.generateAESKey(seed);
 
-            // Lê e verifica assinatura do arquivo
+            // Verificar assinatura do arquivo
             byte[] cipherData = Files.readAllBytes(encFile.toPath());
             X509Certificate userCert = loadUserCert();
             verifyUserSignature(userCert, cipherData, sigFile);
 
-            // Decripta e grava no nome secreto
-            byte[] plainData = CryptoUtils.decryptAesEcbPkcs5(cipherData, aesKeyBytes);
-            Files.write(new File(dir, secretName).toPath(), plainData);
-
+            // Decriptar e gravar
+            byte[] plain = CryptoUtils.decryptAesEcbPkcs5(cipherData, aesKey);
+            Files.write(new File(dir, secretName).toPath(), plain);
             JOptionPane.showMessageDialog(this,
                     "Arquivo decriptado com sucesso: " + secretName,
                     "Sucesso", JOptionPane.INFORMATION_MESSAGE);
 
-        } catch (SecurityException se) {
-            JOptionPane.showMessageDialog(this,
-                    "Erro de segurança: " + se.getMessage(),
-                    "Falha na Verificação", JOptionPane.ERROR_MESSAGE);
         } catch (Exception ex) {
             ex.printStackTrace();
             JOptionPane.showMessageDialog(this,
-                    "Erro ao decriptar arquivo: " + ex.getMessage(),
+                    "Erro ao decriptar: " + ex.getMessage(),
                     "Erro", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    // Verifica assinatura do índice com certificado do admin :contentReference[oaicite:1]{index=1}
-    /**
-     * Verifica assinatura do índice com certificado do admin.
-     */
-    private void verifyAdminSignature(X509Certificate adminCert,
-                                      byte[] cipherData,
-                                      File sigFile) throws Exception {
-        byte[] sigBytes = Files.readAllBytes(sigFile.toPath());
-
-        // 1) Inicializa verificador COM O MESMO algoritmo que foi usado para assinar:
-        Signature verifier = Signature.getInstance("SHA256withRSA");
-        verifier.initVerify(adminCert.getPublicKey());
-
-        // 2) Atualiza com o blob criptografado (index.enc), pois foi isso que foi assinado:
-        verifier.update(cipherData);
-
-        // 3) Faz a checagem final
-        if (!verifier.verify(sigBytes)) {
-            throw new SecurityException(
-                    "Assinatura digital inválida. " +
-                            "Os dados podem ter sido alterados ou a assinatura foi feita com outra chave."
-            );
-        }
+    private void verifyAdminSignature(X509Certificate cert, byte[] data, File sigFile) throws Exception {
+        byte[] sig = Files.readAllBytes(sigFile.toPath());
+        Signature v = Signature.getInstance("SHA256withRSA");
+        v.initVerify(cert.getPublicKey());
+        v.update(data);
+        if (!v.verify(sig)) throw new SecurityException("Assinatura digital inválida.");
     }
 
-
-    // Popula tabela apenas com entradas do usuário ou do grupo :contentReference[oaicite:2]{index=2}
-    private void populateFileTable(String decryptedContent) throws SQLException {
+    private void populateFileTable(String content) throws SQLException {
         tableModel.setRowCount(0);
         String login = currentUser.getLoginEmail();
         String grp   = grupoDao.findById(currentUser.getGid()).getNomeGrupo();
-        for (String line : decryptedContent.split("\r?\n")) {
-            String[] parts = line.split("\\s+");
-            if (parts.length >= 4 && (parts[2].equals(login) || parts[3].equals(grp))) {
-                tableModel.addRow(Arrays.copyOf(parts, 4));
+        for (String line : content.split("\\r?\\n")) {
+            String[] p = line.split("\\s+");
+            if (p.length>=4 && (p[2].equals(login)||p[3].equals(grp))) {
+                tableModel.addRow(Arrays.copyOf(p,4));
             }
         }
     }
 
-    // Mensagens de erro de assinatura e genérico :contentReference[oaicite:3]{index=3}
     private void showSignatureError(SecurityException e) {
         JOptionPane.showMessageDialog(this,
-                "Erro de segurança: " + e.getMessage() + "\n\n" +
-                        "Possíveis causas:\n" +
-                        "1. Arquivo modificado após assinatura\n" +
-                        "2. Certificado do administrador incorreto\n" +
-                        "3. Assinatura feita com chave diferente",
+                "Erro de segurança: " + e.getMessage(),
                 "Falha na Verificação", JOptionPane.ERROR_MESSAGE);
     }
 
-    private void showGenericError(Exception ex) {
-        ex.printStackTrace();
+    private void showGenericError(Exception e) {
         JOptionPane.showMessageDialog(this,
-                "Erro técnico: " + ex.getClass().getSimpleName() + ": " + ex.getMessage(),
+                "Erro técnico: " + e.getMessage(),
                 "Erro", JOptionPane.ERROR_MESSAGE);
     }
 
-    // Decifra PKCS#8 da chave privada com CryptoUtils :contentReference[oaicite:4]{index=4}
-    private PrivateKey decryptPrivateKey(byte[] encKeyBytes, char[] password) throws Exception {
-        File tmp = File.createTempFile("privkey_enc", ".key");
-        Files.write(tmp.toPath(), encKeyBytes);
-        PrivateKey pk = CryptoUtils.decifrarPrivateKeyPKCS8(tmp.getAbsolutePath(), password);
+    private PrivateKey decryptPrivateKey(byte[] encKey, char[] pass) throws Exception {
+        File tmp = File.createTempFile("priv_enc", ".key");
+        Files.write(tmp.toPath(), encKey);
+        PrivateKey pk = CryptoUtils.decifrarPrivateKeyPKCS8(tmp.getAbsolutePath(), pass);
         tmp.delete();
         return pk;
     }
 
-    // Carrega certificado do admin (UID=1) :contentReference[oaicite:5]{index=5}
     private X509Certificate loadAdminCert() throws Exception {
         Chaveiro adm = chaveiroDao.findByUid(1);
         byte[] pem = adm.getCertPem().getBytes(StandardCharsets.UTF_8);
         CertificateFactory cf = CertificateFactory.getInstance("X.509");
-        return (X509Certificate) cf.generateCertificate(
-                new ByteArrayInputStream(pem)
-        );
+        return (X509Certificate)cf.generateCertificate(new ByteArrayInputStream(pem));
     }
 
-    // Carrega certificado do usuário logado para verificação de arquivos
     private X509Certificate loadUserCert() throws Exception {
         Chaveiro ch = chaveiroDao.findByUid(currentUser.getUid());
         byte[] pem = ch.getCertPem().getBytes(StandardCharsets.UTF_8);
         CertificateFactory cf = CertificateFactory.getInstance("X.509");
-        return (X509Certificate) cf.generateCertificate(
-                new ByteArrayInputStream(pem)
-        );
+        return (X509Certificate)cf.generateCertificate(new ByteArrayInputStream(pem));
     }
 
-    // Verifica assinatura de arquivos secretos com certificado do usuário
-    private void verifyUserSignature(X509Certificate cert, byte[] plainData, File sigFile)
-            throws Exception {
-        byte[] sigBytes = Files.readAllBytes(sigFile.toPath());
-        cert.checkValidity();
-        Signature verifier = Signature.getInstance("SHA256withRSA");
-        if (!cert.getSigAlgName().equals(verifier.getAlgorithm()))
-            throw new SecurityException("Incompatibilidade de algoritmo de assinatura");
-        verifier.initVerify(cert.getPublicKey());
-        verifier.update(plainData);
-        if (!verifier.verify(sigBytes))
-            throw new SecurityException("Assinatura do arquivo inválida");
+    private void verifyUserSignature(X509Certificate cert, byte[] data, File sigFile) throws Exception {
+        byte[] sig = Files.readAllBytes(sigFile.toPath());
+        Signature v = Signature.getInstance("SHA256withRSA");
+        v.initVerify(cert.getPublicKey());
+        v.update(data);
+        if (!v.verify(sig)) throw new SecurityException("Assinatura de arquivo inválida.");
     }
 
-    // Auxiliar para debug em hexa :contentReference[oaicite:6]{index=6}
-    private static String bytesToHex(byte[] bytes) {
+    private static String bytesToHex(byte[] b) {
         StringBuilder sb = new StringBuilder();
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b));
-        }
+        for (byte x: b) sb.append(String.format("%02x", x));
         return sb.toString();
     }
 }
