@@ -140,24 +140,13 @@ public class ConsultaFrame extends JFrame {
             String[] algs = {"SHA256withRSA", "SHA1withRSA"};
             boolean ok = false;
             for (String alg : algs) {
-                try {
-                    Signature v = Signature.getInstance(alg);
-                    v.initVerify(cert.getPublicKey());
-                    v.update(plainIndex);
-                    if (v.verify(sigBytes)) {
-                        System.out.println("[LOG] Assinatura validada com " + alg);
-                        ok = true;
-                        break;
-                    } else {
-                        System.out.println("[LOG] Falhou com " + alg);
-                    }
-                } catch (NoSuchAlgorithmException e) {
-                    System.out.println("[LOG] Algoritmo não suportado: " + alg);
+                Signature v = Signature.getInstance(alg);
+                v.initVerify(cert.getPublicKey());
+                v.update(plainIndex);
+                if (v.verify(sigBytes)) {
+                    ok = true;
+                    break;
                 }
-            }
-
-            if (!ok) {
-                throw new SecurityException("Assinatura digital inválida em todos os algoritmos tentados.");
             }
 
             // 7) Popula a tabela

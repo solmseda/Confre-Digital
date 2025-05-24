@@ -1,9 +1,3 @@
-/*
- * Trabalho 3 de Segurança da Informação
- * Sol Castilho Araújo de Moraes Sêda - 2511704
- * Leonardo Giuri Santiago - 2410725
- */
-
 package ui;
 
 import dao.UsuarioDAO;
@@ -18,6 +12,13 @@ import org.bouncycastle.crypto.generators.OpenBSDBCrypt;
 
 import javax.swing.*;
 import java.awt.*;
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.security.PrivateKey;
+import java.security.Signature;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.*;
@@ -28,8 +29,7 @@ import java.util.stream.IntStream;
 /**
  * JFrame para autenticação multifator do Cofre Digital:
  * 1) Identificação por e-mail
- * 2) Senha pessoal via teclado virtual de pares de dígitos (sem escolha interna),
- *    validada por enumeração de possíveis sequências
+ * 2) Senha pessoal via teclado virtual de pares de dígitos
  * 3) Código TOTP
  */
 public class LoginFrame extends JFrame {
@@ -71,66 +71,64 @@ public class LoginFrame extends JFrame {
     }
 
     private void initComponents() {
-        // Etapa 1
+        // Etapa 1: Identificação
         JPanel idPanel = new JPanel(new BorderLayout(10,10));
         JPanel idFields = new JPanel(new FlowLayout());
-        idFields.add(new JLabel("E-mail:")); idFields.add(txtEmail);
+        idFields.add(new JLabel("E-mail:"));
+        idFields.add(txtEmail);
         idPanel.add(idFields, BorderLayout.CENTER);
         JPanel idNav = new JPanel();
-        idNav.add(btnNext); idPanel.add(idNav, BorderLayout.SOUTH);
+        idNav.add(btnNext);
+        idPanel.add(idNav, BorderLayout.SOUTH);
         btnNext.addActionListener(e -> {
-            try {
-                performIdentification();
-            } catch (SQLException ex) {
-                throw new RuntimeException(ex);
-            }
+            try { performIdentification(); }
+            catch (SQLException ex) { throw new RuntimeException(ex); }
         });
 
-        // Etapa 2
+        // Etapa 2: Senha Pessoal
         JPanel senhaPanel = new JPanel(new BorderLayout(10,10));
         pfSenha.setEditable(false);
         senhaPanel.add(pfSenha, BorderLayout.NORTH);
 
-        JPanel teclasPanel = new JPanel(new GridLayout(2, 4, 5, 5));
-
+        JPanel teclasPanel = new JPanel(new GridLayout(2, 3, 5, 5));
+        // Gera 5 botões de pares
         for (int i = 0; i < 5; i++) {
             JButton b = new JButton();
             senhaButtons.add(b);
             teclasPanel.add(b);
             b.addActionListener(evt -> {
-                String pair = b.getText();      // ex: "1-9"
-                clickedPairs.add(pair);
+                clickedPairs.add(b.getText());
                 pfSenha.setText("*".repeat(clickedPairs.size()));
                 embaralharTeclas();
             });
         }
-
-        teclasPanel.add(btnOk);
-        btnOk.addActionListener(e -> performPasswordValidation());
+        // Botão LIMPAR ao lado
         teclasPanel.add(btnLimpar);
         btnLimpar.addActionListener(e -> {
             clickedPairs.clear();
             pfSenha.setText("");
         });
-        teclasPanel.add(new JLabel());
-
         senhaPanel.add(teclasPanel, BorderLayout.CENTER);
-        JPanel pwdActions = new JPanel();
-        pwdActions.add(btnOk); pwdActions.add(btnLimpar);
+
+        // Rodapé para OK e LIMPAR
+        JPanel pwdActions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        pwdActions.add(btnLimpar);
+        pwdActions.add(btnOk);
         senhaPanel.add(pwdActions, BorderLayout.SOUTH);
-        btnLimpar.addActionListener(e -> { clickedPairs.clear(); pfSenha.setText(""); });
         btnOk.addActionListener(e -> performPasswordValidation());
 
-        // Etapa 3
+        // Etapa 3: TOTP
         JPanel totpPanel = new JPanel(new BorderLayout(10,10));
         JPanel totpFields = new JPanel(new FlowLayout());
-        totpFields.add(new JLabel("Código TOTP:")); totpFields.add(txtTotp);
+        totpFields.add(new JLabel("Código TOTP:"));
+        totpFields.add(txtTotp);
         totpPanel.add(totpFields, BorderLayout.CENTER);
-        JPanel totpNav = new JPanel(); totpNav.add(btnTotpValidar);
+        JPanel totpNav = new JPanel();
+        totpNav.add(btnTotpValidar);
         totpPanel.add(totpNav, BorderLayout.SOUTH);
         btnTotpValidar.addActionListener(e -> performTotp());
 
-        // adiciona ao mainPanel
+        // Adiciona painéis ao mainPanel
         mainPanel.add(idPanel, "identificacao");
         mainPanel.add(senhaPanel, "senha");
         mainPanel.add(totpPanel, "totp");
@@ -149,7 +147,8 @@ public class LoginFrame extends JFrame {
         long now = System.currentTimeMillis();
         Long until = bloqueios.get(uid);
         if (until != null && now < until) {
-            JOptionPane.showMessageDialog(this, "Acesso bloqueado até " + new Date(until),
+            JOptionPane.showMessageDialog(this,
+                    "Acesso bloqueado até " + new Date(until),
                     "Bloqueado", JOptionPane.WARNING_MESSAGE);
             log(2004, uid, "Usuário bloqueado na identificação");
             return;
@@ -157,7 +156,8 @@ public class LoginFrame extends JFrame {
         currentUser = user;
         log(2002, uid, "Identificação bem-sucedida");
         log(3001, uid, "Início da etapa 2: senha pessoal");
-        clickedPairs.clear(); pfSenha.setText("");
+        clickedPairs.clear();
+        pfSenha.setText("");
         embaralharTeclas();
         cardLayout.show(mainPanel, "senha");
     }
@@ -173,7 +173,6 @@ public class LoginFrame extends JFrame {
     private void performPasswordValidation() {
         int uid = currentUser.getUid();
         String hash = currentUser.getSenhaBcrypt();
-
         boolean matched = tryCombinations(0, new StringBuilder(), hash);
         if (!matched) {
             int f = falhasSenha.getOrDefault(uid, 0) + 1;
@@ -184,13 +183,17 @@ public class LoginFrame extends JFrame {
                 bloqueios.put(uid, until);
                 falhasSenha.remove(uid);
                 log(3007, uid, "Usuário bloqueado após 3 falhas na senha");
+                JOptionPane.showMessageDialog(this,
+                        "Você excedeu o número de tentativas. Tente novamente mais tarde.",
+                        "Bloqueado", JOptionPane.WARNING_MESSAGE);
                 cardLayout.show(mainPanel, "identificacao");
             } else {
                 JOptionPane.showMessageDialog(this,
                         "Senha incorreta. Tentativa " + f + "/3",
                         "Erro", JOptionPane.ERROR_MESSAGE);
             }
-            clickedPairs.clear(); pfSenha.setText("");
+            clickedPairs.clear();
+            pfSenha.setText("");
             return;
         }
 
@@ -210,8 +213,7 @@ public class LoginFrame extends JFrame {
             return false;
         }
         String pair = clickedPairs.get(idx);
-        char d1 = pair.charAt(0);
-        char d2 = pair.charAt(2);
+        char d1 = pair.charAt(0), d2 = pair.charAt(2);
         sb.append(d1);
         if (tryCombinations(idx+1, sb, hash)) return true;
         sb.setLength(sb.length()-1);
@@ -225,11 +227,11 @@ public class LoginFrame extends JFrame {
         String code = txtTotp.getText().trim();
         int uid = currentUser.getUid();
         try {
-            byte[] enc = currentUser.getTotpSecretEnc();
+            byte[] enc    = currentUser.getTotpSecretEnc();
             byte[] secret = CryptoUtils.decifrarComAES256(enc, currentPassword);
-            Base32 b32 = new Base32(Base32.Alphabet.BASE32, false, false);
-            String base32Secret = b32.toString(secret);
-            TOTP totp = new TOTP(base32Secret, 30);
+            Base32 b32    = new Base32(Base32.Alphabet.BASE32, false, false);
+            String base32 = b32.toString(secret);
+            TOTP totp     = new TOTP(base32, 30);
             if (!totp.validateCode(code)) {
                 JOptionPane.showMessageDialog(this, "Código TOTP inválido.",
                         "Erro", JOptionPane.ERROR_MESSAGE);
@@ -242,7 +244,8 @@ public class LoginFrame extends JFrame {
             dispose();
             new TelaPrincipal(currentUser).setVisible(true);
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Erro no TOTP: " + ex.getMessage(),
+            JOptionPane.showMessageDialog(this,
+                    "Erro no TOTP: " + ex.getMessage(),
                     "Erro", JOptionPane.ERROR_MESSAGE);
         }
     }
