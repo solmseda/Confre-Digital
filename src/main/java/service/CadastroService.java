@@ -18,6 +18,7 @@ import model.Usuario;
 import util.Base32;
 import util.CryptoUtils;
 import util.TOTPUtil;
+import util.Logger;
 
 import javax.swing.*;
 import javax.swing.BoxLayout;

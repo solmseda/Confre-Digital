@@ -10,6 +10,7 @@ import dao.GrupoDAO;
 import dao.RegistroDAO;
 import model.Registro;
 import model.Usuario;
+import util.Logger;
 
 import javax.swing.*;
 import java.awt.*;
@@ -72,17 +73,21 @@ public class SaidaFrame extends JFrame {
         btnSessao.addActionListener(e -> {
             // log e volta ao login
             try {
-                registroDao.insert(new RegistroBuilder(8002, user.getUid(), "Botão Encerrar Sessão pressionado").build());
+                Logger.registra("8002");
             } catch (SQLException ex) {
                 throw new RuntimeException(ex);
             }
             dispose();
-            new LoginFrame().setVisible(true);
+            try {
+                new LoginFrame().setVisible(true);
+            } catch (SQLException ex) {
+                throw new RuntimeException(ex);
+            }
         });
 
         btnSystem.addActionListener(e -> {
             try {
-                registroDao.insert(new RegistroBuilder(8003, user.getUid(), "Botão Encerrar Sistema pressionado").build());
+                Logger.registra("8003");
             } catch (SQLException ex) {
                 throw new RuntimeException(ex);
             }

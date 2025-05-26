@@ -7,6 +7,8 @@ import model.Usuario;
 import util.CryptoUtils;
 import util.Base32;
 import util.TOTP;
+import util.Logger;
+
 
 import org.bouncycastle.crypto.generators.OpenBSDBCrypt;
 
@@ -60,17 +62,17 @@ public class LoginFrame extends JFrame {
     private final JTextField txtTotp = new JTextField(6);
     private final JButton btnTotpValidar = new JButton("Validar TOTP");
 
-    public LoginFrame() {
+    public LoginFrame() throws SQLException {
         super("Cofre Digital - Autenticação");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setSize(500, 350);
         setLocationRelativeTo(null);
         initComponents();
-        log(2001, null, "Início da etapa 1: identificação do usuário");
+        Logger.registra("2001");
         cardLayout.show(mainPanel, "identificacao");
     }
 
-    private void initComponents() {
+    private void initComponents() throws SQLException {
         // Etapa 1: Identificação
         JPanel idPanel = new JPanel(new BorderLayout(10,10));
         JPanel idFields = new JPanel(new FlowLayout());
@@ -115,7 +117,13 @@ public class LoginFrame extends JFrame {
         pwdActions.add(btnLimpar);
         pwdActions.add(btnOk);
         senhaPanel.add(pwdActions, BorderLayout.SOUTH);
-        btnOk.addActionListener(e -> performPasswordValidation());
+        btnOk.addActionListener(e -> {
+            try {
+                performPasswordValidation();
+            } catch (SQLException ex) {
+                throw new RuntimeException(ex);
+            }
+        });
 
         // Etapa 3: TOTP
         JPanel totpPanel = new JPanel(new BorderLayout(10,10));
@@ -154,8 +162,8 @@ public class LoginFrame extends JFrame {
             return;
         }
         currentUser = user;
-        log(2002, uid, "Identificação bem-sucedida");
-        log(3001, uid, "Início da etapa 2: senha pessoal");
+        Logger.registra("2002");
+        Logger.registra("3001");
         clickedPairs.clear();
         pfSenha.setText("");
         embaralharTeclas();
@@ -170,24 +178,27 @@ public class LoginFrame extends JFrame {
         }
     }
 
-    private void performPasswordValidation() {
+    private void performPasswordValidation() throws SQLException {
         int uid = currentUser.getUid();
         String hash = currentUser.getSenhaBcrypt();
         boolean matched = tryCombinations(0, new StringBuilder(), hash);
         if (!matched) {
             int f = falhasSenha.getOrDefault(uid, 0) + 1;
             falhasSenha.put(uid, f);
-            log(3003 + f, uid, "Erro " + f + " na senha pessoal");
+            Logger.registra("3003");
             if (f >= 3) {
+                Logger.registra("3006");
                 long until = System.currentTimeMillis() + Duration.ofMinutes(2).toMillis();
                 bloqueios.put(uid, until);
                 falhasSenha.remove(uid);
-                log(3007, uid, "Usuário bloqueado após 3 falhas na senha");
+                Logger.registra("3007");
                 JOptionPane.showMessageDialog(this,
                         "Você excedeu o número de tentativas. Tente novamente mais tarde.",
                         "Bloqueado", JOptionPane.WARNING_MESSAGE);
                 cardLayout.show(mainPanel, "identificacao");
             } else {
+                if(f == 1) Logger.registra("3004");
+                if(f == 2) Logger.registra("3005");
                 JOptionPane.showMessageDialog(this,
                         "Senha incorreta. Tentativa " + f + "/3",
                         "Erro", JOptionPane.ERROR_MESSAGE);
@@ -197,9 +208,9 @@ public class LoginFrame extends JFrame {
             return;
         }
 
-        log(3002, uid, "Senha pessoal válida");
+        Logger.registra("3002");
         falhasSenha.remove(uid);
-        log(4001, uid, "Início da etapa 3: TOTP");
+        Logger.registra("4001");
         cardLayout.show(mainPanel, "totp");
     }
 
@@ -235,10 +246,10 @@ public class LoginFrame extends JFrame {
             if (!totp.validateCode(code)) {
                 JOptionPane.showMessageDialog(this, "Código TOTP inválido.",
                         "Erro", JOptionPane.ERROR_MESSAGE);
-                log(4004, uid, "Falha no TOTP");
+                Logger.registra("4004");
                 return;
             }
-            log(4003, uid, "TOTP válido");
+            Logger.registra("4003");
             JOptionPane.showMessageDialog(this, "Autenticado com sucesso!",
                     "Sucesso", JOptionPane.INFORMATION_MESSAGE);
             dispose();

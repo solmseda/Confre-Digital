@@ -13,13 +13,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.sql.SQLException;
 
 public class Main {
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             try {
                 UsuarioDAO usuarioDAO = new UsuarioDAO();
-                //Logger.registra("1001");
+                Logger.registra("1001");
 
                 if (usuarioDAO.findAll().isEmpty()) {
                     // --- PRIMEIRA EXECUÇÃO ---
@@ -27,7 +28,7 @@ public class Main {
                             "Primeira execução detectada. Vamos cadastrar o administrador.",
                             "Cofre Digital – Configuração Inicial",
                             JOptionPane.INFORMATION_MESSAGE);
-                    //Logger.registra("1005");
+                    Logger.registra("1005");
 
                     new CadastroService().executarCadastro();
 
@@ -48,6 +49,7 @@ public class Main {
                             JOptionPane.PLAIN_MESSAGE
                     );
                     if (ok != JOptionPane.OK_OPTION) {
+                        Logger.registra("1002");
                         System.exit(0);
                     }
                     char[] adminPass = pf.getPassword();
@@ -79,13 +81,15 @@ public class Main {
                                 "Frase secreta inválida. O sistema será encerrado.",
                                 "Erro",
                                 JOptionPane.ERROR_MESSAGE);
+                        Logger.registra("1002");
                         System.exit(1);
                     }
 
-                    //Logger.registra("1007");  // código de evento: admin autenticado
+
                 }
 
                 // --- se passou, inicia a autenticação de usuários ---
+                Logger.registra("1006");
                 LoginFrame login = new LoginFrame();
                 login.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
                 login.setVisible(true);
@@ -95,6 +99,11 @@ public class Main {
                         "Erro fatal ao iniciar o sistema:\n" + e.getMessage(),
                         "Erro",
                         JOptionPane.ERROR_MESSAGE);
+                try {
+                    Logger.registra("1002");
+                } catch (SQLException ex) {
+                    throw new RuntimeException(ex);
+                }
                 System.exit(1);
             }
         });
